@@ -16,6 +16,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<UpdateTemperature>(_onUpdateTemperature);
     on<UpdateSystemPrompt>(_onUpdateSystemPrompt);
     on<LoadSettings>(_onLoadSettings);
+    on<UpdateProvider>(_onUpdateProvider);
+    on<UpdateModel>(_onUpdateModel);
+    on<LoadModels>(_onLoadModels);
+    on<DeleteMessage>(_onDeleteMessage);
     
     // Загружаем настройки при инициализации
     _initializeSettings();
@@ -202,24 +206,37 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final currentTemperature = state.temperature;
     final currentSystemPrompt = state.systemPrompt;
     
+    // Получаем текущие настройки провайдера и модели
+    final currentProvider = state.provider;
+    final currentModel = state.model;
+    final currentAvailableModels = state.availableModels;
+    
     // Переходим в состояние загрузки
     emit(ChatLoading(
       updatedMessages,
       currentTopic: currentTopic,
       temperature: currentTemperature,
       systemPrompt: currentSystemPrompt,
+      provider: currentProvider,
+      model: currentModel,
+      availableModels: currentAvailableModels,
     ));
 
     try {
       // Получаем текущие настройки температуры и системного промпта
       final currentTemperature = state.temperature;
       final currentSystemPrompt = state.systemPrompt;
+      final currentProvider = state.provider;
+      final currentModel = state.model;
+      final currentModelForApi = state.model.isNotEmpty ? state.model : null;
       
       // Отправляем запрос к API
       final response = await _apiService.sendMessage(
         updatedMessages,
         temperature: currentTemperature,
         systemPrompt: currentSystemPrompt.isNotEmpty ? currentSystemPrompt : null,
+        provider: currentProvider,
+        model: currentModelForApi,
       );
 
       // Парсим ответ
@@ -277,6 +294,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         currentTopic: topic,
         temperature: currentTemperature,
         systemPrompt: currentSystemPrompt,
+        provider: currentProvider,
+        model: currentModel,
+        availableModels: currentAvailableModels,
       ));
     } catch (e) {
       // Переходим в состояние ошибки
@@ -304,6 +324,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         errorMessage,
         temperature: currentTemperature,
         systemPrompt: currentSystemPrompt,
+        provider: currentProvider,
+        model: currentModel,
+        availableModels: currentAvailableModels,
       ));
     }
   }
@@ -315,6 +338,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     emit(ChatInitial(
       temperature: state.temperature,
       systemPrompt: state.systemPrompt,
+      provider: state.provider,
+      model: state.model,
+      availableModels: state.availableModels,
     ));
   }
 
@@ -334,6 +360,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         currentTopic: currentState.currentTopic,
         temperature: event.temperature,
         systemPrompt: currentState.systemPrompt,
+        provider: currentState.provider,
+        model: currentState.model,
+        availableModels: currentState.availableModels,
       ));
     } else if (state is ChatLoading) {
       final currentState = state as ChatLoading;
@@ -342,6 +371,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         currentTopic: currentState.currentTopic,
         temperature: event.temperature,
         systemPrompt: currentState.systemPrompt,
+        provider: currentState.provider,
+        model: currentState.model,
+        availableModels: currentState.availableModels,
       ));
     } else if (state is ChatError) {
       final currentState = state as ChatError;
@@ -350,11 +382,17 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         currentState.error,
         temperature: event.temperature,
         systemPrompt: currentState.systemPrompt,
+        provider: currentState.provider,
+        model: currentState.model,
+        availableModels: currentState.availableModels,
       ));
     } else {
       emit(ChatInitial(
         temperature: event.temperature,
         systemPrompt: state.systemPrompt,
+        provider: state.provider,
+        model: state.model,
+        availableModels: state.availableModels,
       ));
     }
   }
@@ -375,6 +413,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         currentTopic: currentState.currentTopic,
         temperature: currentState.temperature,
         systemPrompt: event.systemPrompt,
+        provider: currentState.provider,
+        model: currentState.model,
+        availableModels: currentState.availableModels,
       ));
     } else if (state is ChatLoading) {
       final currentState = state as ChatLoading;
@@ -383,6 +424,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         currentTopic: currentState.currentTopic,
         temperature: currentState.temperature,
         systemPrompt: event.systemPrompt,
+        provider: currentState.provider,
+        model: currentState.model,
+        availableModels: currentState.availableModels,
       ));
     } else if (state is ChatError) {
       final currentState = state as ChatError;
@@ -391,11 +435,17 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         currentState.error,
         temperature: currentState.temperature,
         systemPrompt: event.systemPrompt,
+        provider: currentState.provider,
+        model: currentState.model,
+        availableModels: currentState.availableModels,
       ));
     } else {
       emit(ChatInitial(
         temperature: state.temperature,
         systemPrompt: event.systemPrompt,
+        provider: state.provider,
+        model: state.model,
+        availableModels: state.availableModels,
       ));
     }
   }
@@ -407,6 +457,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final settings = await SettingsService.loadAllSettings();
     final temperature = settings['temperature'] as double;
     final systemPrompt = settings['systemPrompt'] as String;
+    final provider = settings['provider'] as String? ?? 'deepseek';
+    final model = settings['model'] as String? ?? '';
     
     if (state is ChatLoaded) {
       final currentState = state as ChatLoaded;
@@ -415,6 +467,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         currentTopic: currentState.currentTopic,
         temperature: temperature,
         systemPrompt: systemPrompt,
+        provider: provider,
+        model: model,
+        availableModels: currentState.availableModels,
       ));
     } else if (state is ChatLoading) {
       final currentState = state as ChatLoading;
@@ -423,6 +478,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         currentTopic: currentState.currentTopic,
         temperature: temperature,
         systemPrompt: systemPrompt,
+        provider: provider,
+        model: model,
+        availableModels: currentState.availableModels,
       ));
     } else if (state is ChatError) {
       final currentState = state as ChatError;
@@ -431,12 +489,252 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         currentState.error,
         temperature: temperature,
         systemPrompt: systemPrompt,
+        provider: provider,
+        model: model,
+        availableModels: currentState.availableModels,
       ));
     } else {
       emit(ChatInitial(
         temperature: temperature,
         systemPrompt: systemPrompt,
+        provider: provider,
+        model: model,
+        availableModels: state.availableModels,
       ));
+    }
+  }
+
+  void _onUpdateProvider(
+    UpdateProvider event,
+    Emitter<ChatState> emit,
+  ) async {
+    print('ChatBloc: Обновление провайдера на ${event.provider}');
+    // Сохраняем настройку
+    final saved = await SettingsService.saveProvider(event.provider);
+    print('ChatBloc: Провайдер сохранен: $saved');
+    
+    if (state is ChatLoaded) {
+      final currentState = state as ChatLoaded;
+      emit(ChatLoaded(
+        currentState.messages,
+        currentTopic: currentState.currentTopic,
+        temperature: currentState.temperature,
+        systemPrompt: currentState.systemPrompt,
+        provider: event.provider,
+        model: currentState.model,
+        availableModels: currentState.availableModels,
+      ));
+    } else if (state is ChatLoading) {
+      final currentState = state as ChatLoading;
+      emit(ChatLoading(
+        currentState.messages,
+        currentTopic: currentState.currentTopic,
+        temperature: currentState.temperature,
+        systemPrompt: currentState.systemPrompt,
+        provider: event.provider,
+        model: currentState.model,
+        availableModels: currentState.availableModels,
+      ));
+    } else if (state is ChatError) {
+      final currentState = state as ChatError;
+      emit(ChatError(
+        currentState.messages,
+        currentState.error,
+        temperature: currentState.temperature,
+        systemPrompt: currentState.systemPrompt,
+        provider: event.provider,
+        model: currentState.model,
+        availableModels: currentState.availableModels,
+      ));
+    } else {
+      emit(ChatInitial(
+        temperature: state.temperature,
+        systemPrompt: state.systemPrompt,
+        provider: event.provider,
+        model: state.model,
+        availableModels: state.availableModels,
+      ));
+    }
+  }
+
+  void _onUpdateModel(
+    UpdateModel event,
+    Emitter<ChatState> emit,
+  ) async {
+    print('ChatBloc: Обновление модели на ${event.model}');
+    // Сохраняем настройку
+    final saved = await SettingsService.saveModel(event.model);
+    print('ChatBloc: Модель сохранена: $saved');
+    
+    if (state is ChatLoaded) {
+      final currentState = state as ChatLoaded;
+      emit(ChatLoaded(
+        currentState.messages,
+        currentTopic: currentState.currentTopic,
+        temperature: currentState.temperature,
+        systemPrompt: currentState.systemPrompt,
+        provider: currentState.provider,
+        model: event.model,
+        availableModels: currentState.availableModels,
+      ));
+    } else if (state is ChatLoading) {
+      final currentState = state as ChatLoading;
+      emit(ChatLoading(
+        currentState.messages,
+        currentTopic: currentState.currentTopic,
+        temperature: currentState.temperature,
+        systemPrompt: currentState.systemPrompt,
+        provider: currentState.provider,
+        model: event.model,
+        availableModels: currentState.availableModels,
+      ));
+    } else if (state is ChatError) {
+      final currentState = state as ChatError;
+      emit(ChatError(
+        currentState.messages,
+        currentState.error,
+        temperature: currentState.temperature,
+        systemPrompt: currentState.systemPrompt,
+        provider: currentState.provider,
+        model: event.model,
+        availableModels: currentState.availableModels,
+      ));
+    } else {
+      emit(ChatInitial(
+        temperature: state.temperature,
+        systemPrompt: state.systemPrompt,
+        provider: state.provider,
+        model: event.model,
+        availableModels: state.availableModels,
+      ));
+    }
+  }
+
+  void _onLoadModels(
+    LoadModels event,
+    Emitter<ChatState> emit,
+  ) async {
+    try {
+      print('ChatBloc: Загрузка списка моделей...');
+      final modelsData = await _apiService.getAvailableModels();
+      print('ChatBloc: Список моделей загружен');
+      
+      if (state is ChatLoaded) {
+        final currentState = state as ChatLoaded;
+        emit(ChatLoaded(
+          currentState.messages,
+          currentTopic: currentState.currentTopic,
+          temperature: currentState.temperature,
+          systemPrompt: currentState.systemPrompt,
+          provider: currentState.provider,
+          model: currentState.model,
+          availableModels: modelsData,
+        ));
+      } else if (state is ChatLoading) {
+        final currentState = state as ChatLoading;
+        emit(ChatLoading(
+          currentState.messages,
+          currentTopic: currentState.currentTopic,
+          temperature: currentState.temperature,
+          systemPrompt: currentState.systemPrompt,
+          provider: currentState.provider,
+          model: currentState.model,
+          availableModels: modelsData,
+        ));
+      } else if (state is ChatError) {
+        final currentState = state as ChatError;
+        emit(ChatError(
+          currentState.messages,
+          currentState.error,
+          temperature: currentState.temperature,
+          systemPrompt: currentState.systemPrompt,
+          provider: currentState.provider,
+          model: currentState.model,
+          availableModels: modelsData,
+        ));
+      } else {
+        emit(ChatInitial(
+          temperature: state.temperature,
+          systemPrompt: state.systemPrompt,
+          provider: state.provider,
+          model: state.model,
+          availableModels: modelsData,
+        ));
+      }
+    } catch (e) {
+      print('ChatBloc: Ошибка при загрузке списка моделей: $e');
+      // Не меняем состояние при ошибке загрузки моделей
+    }
+  }
+
+  void _onDeleteMessage(
+    DeleteMessage event,
+    Emitter<ChatState> emit,
+  ) {
+    // Получаем текущие сообщения
+    List<Message> currentMessages = [];
+    String? currentTopic;
+    
+    if (state is ChatLoaded) {
+      final currentState = state as ChatLoaded;
+      currentMessages = currentState.messages;
+      currentTopic = currentState.currentTopic;
+    } else if (state is ChatLoading) {
+      final currentState = state as ChatLoading;
+      currentMessages = currentState.messages;
+      currentTopic = currentState.currentTopic;
+    } else if (state is ChatError) {
+      final currentState = state as ChatError;
+      currentMessages = currentState.messages;
+      currentTopic = null;
+    }
+    
+    // Проверяем, что индекс валидный
+    if (event.messageIndex >= 0 && event.messageIndex < currentMessages.length) {
+      // Удаляем сообщение
+      final updatedMessages = List<Message>.from(currentMessages);
+      updatedMessages.removeAt(event.messageIndex);
+      
+      // Обновляем состояние
+      if (state is ChatLoaded) {
+        emit(ChatLoaded(
+          updatedMessages,
+          currentTopic: currentTopic,
+          temperature: state.temperature,
+          systemPrompt: state.systemPrompt,
+          provider: state.provider,
+          model: state.model,
+          availableModels: state.availableModels,
+        ));
+      } else if (state is ChatLoading) {
+        emit(ChatLoading(
+          updatedMessages,
+          currentTopic: currentTopic,
+          temperature: state.temperature,
+          systemPrompt: state.systemPrompt,
+          provider: state.provider,
+          model: state.model,
+          availableModels: state.availableModels,
+        ));
+      } else if (state is ChatError) {
+        emit(ChatError(
+          updatedMessages,
+          (state as ChatError).error,
+          temperature: state.temperature,
+          systemPrompt: state.systemPrompt,
+          provider: state.provider,
+          model: state.model,
+          availableModels: state.availableModels,
+        ));
+      } else {
+        emit(ChatInitial(
+          temperature: state.temperature,
+          systemPrompt: state.systemPrompt,
+          provider: state.provider,
+          model: state.model,
+          availableModels: state.availableModels,
+        ));
+      }
     }
   }
 

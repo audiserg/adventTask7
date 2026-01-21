@@ -61,6 +61,16 @@ class ChatScreen extends StatelessWidget {
         ),
         centerTitle: true,
         actions: [
+          // Иконка выбора провайдера и модели
+          BlocBuilder<ChatBloc, ChatState>(
+            builder: (context, state) {
+              return IconButton(
+                icon: const Icon(Icons.model_training),
+                tooltip: 'Выбор провайдера и модели',
+                onPressed: () => _showModelSelectorDialog(context, state),
+              );
+            },
+          ),
           // Иконка настройки температуры
           BlocBuilder<ChatBloc, ChatState>(
             builder: (context, state) {
@@ -147,7 +157,10 @@ class ChatScreen extends StatelessWidget {
                   itemCount: messages.length + (state is ChatLoading ? 1 : 0),
                   itemBuilder: (context, index) {
                     if (index < messages.length) {
-                      return ChatMessageWidget(message: messages[index]);
+                      return ChatMessageWidget(
+                        message: messages[index],
+                        messageIndex: index,
+                      );
                     } else {
                       // Показываем индикатор загрузки
                       return const Padding(
@@ -309,6 +322,274 @@ class ChatScreen extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+
+  static void _showModelSelectorDialog(BuildContext context, ChatState state) {
+    final chatBloc = context.read<ChatBloc>();
+    
+    // Загружаем список моделей, если еще не загружен
+    if (state.availableModels == null) {
+      chatBloc.add(const LoadModels());
+    }
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return BlocProvider.value(
+          value: chatBloc,
+          child: BlocBuilder<ChatBloc, ChatState>(
+            builder: (context, currentState) {
+              final bloc = context.read<ChatBloc>();
+              return StatefulBuilder(
+                builder: (context, setDialogState) {
+                  return AlertDialog(
+                  title: const Text('Выбор провайдера и модели'),
+                  content: SizedBox(
+                    width: double.maxFinite,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Выбор провайдера
+                          const Text(
+                            'Провайдер:',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: RadioListTile<String>(
+                                  title: const Text('DeepSeek'),
+                                  value: 'deepseek',
+                                  groupValue: currentState.provider,
+                                    onChanged: (value) {
+                                      if (value != null) {
+                                        bloc.add(UpdateProvider(value));
+                                      }
+                                    },
+                                ),
+                              ),
+                              Expanded(
+                                child: RadioListTile<String>(
+                                  title: const Text('Hugging Face'),
+                                  value: 'huggingface',
+                                  groupValue: currentState.provider,
+                                    onChanged: (value) {
+                                      if (value != null) {
+                                        bloc.add(UpdateProvider(value));
+                                      }
+                                    },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          // Выбор модели
+                          const Text(
+                            'Модель:',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          // Предустановленные модели
+                            if (currentState.availableModels != null)
+                              _buildPresetModels(
+                                context,
+                                currentState,
+                                bloc,
+                              ),
+                            const SizedBox(height: 8),
+                            // Полный список моделей
+                            if (currentState.availableModels != null)
+                              _buildModelList(
+                                context,
+                                currentState,
+                                bloc,
+                              )
+                          else
+                            const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: CircularProgressIndicator(),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: const Text('Закрыть'),
+                    ),
+                  ],
+                );
+                },
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  static Widget _buildPresetModels(
+    BuildContext context,
+    ChatState state,
+    ChatBloc bloc,
+  ) {
+    final providers = state.availableModels?['providers'] as Map<String, dynamic>?;
+    if (providers == null) return const SizedBox.shrink();
+    
+    final providerKey = state.provider;
+    final providerData = providers[providerKey] as Map<String, dynamic>?;
+    if (providerData == null) return const SizedBox.shrink();
+    
+    final presets = providerData['presets'] as Map<String, dynamic>?;
+    if (presets == null) return const SizedBox.shrink();
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Предустановленные:',
+          style: TextStyle(fontSize: 12, color: Colors.grey),
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            _buildPresetChip(
+              context,
+              'Топовая',
+              presets['top'] as String? ?? '',
+              state.model,
+              bloc,
+            ),
+            _buildPresetChip(
+              context,
+              'Средняя',
+              presets['medium'] as String? ?? '',
+              state.model,
+              bloc,
+            ),
+            _buildPresetChip(
+              context,
+              'Легкая',
+              presets['light'] as String? ?? '',
+              state.model,
+              bloc,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  static Widget _buildPresetChip(
+    BuildContext context,
+    String label,
+    String model,
+    String currentModel,
+    ChatBloc bloc,
+  ) {
+    final isSelected = currentModel == model;
+    // Извлекаем короткое название модели (последняя часть после /)
+    final modelName = model.split('/').last;
+    return Tooltip(
+      message: model, // Полное название модели в tooltip
+      child: FilterChip(
+        label: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 2),
+            Text(
+              modelName,
+              style: TextStyle(
+                fontSize: 10,
+                color: isSelected 
+                  ? Theme.of(context).colorScheme.onSecondaryContainer
+                  : Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+        selected: isSelected,
+        onSelected: (selected) {
+          if (selected) {
+            bloc.add(UpdateModel(model));
+          }
+        },
+      ),
+    );
+  }
+
+  static Widget _buildModelList(
+    BuildContext context,
+    ChatState state,
+    ChatBloc bloc,
+  ) {
+    final providers = state.availableModels?['providers'] as Map<String, dynamic>?;
+    if (providers == null) return const SizedBox.shrink();
+    
+    final providerKey = state.provider;
+    final providerData = providers[providerKey] as Map<String, dynamic>?;
+    if (providerData == null) return const SizedBox.shrink();
+    
+    final models = providerData['models'] as List<dynamic>?;
+    if (models == null || models.isEmpty) {
+      return const Text('Нет доступных моделей');
+    }
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Все модели:',
+          style: TextStyle(fontSize: 12, color: Colors.grey),
+        ),
+        const SizedBox(height: 4),
+        SizedBox(
+          height: 200,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: models.length,
+            itemBuilder: (context, index) {
+              final modelName = models[index].toString();
+              final isSelected = state.model == modelName;
+              return RadioListTile<String>(
+                title: Text(
+                  modelName,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+                value: modelName,
+                groupValue: state.model.isEmpty ? null : state.model,
+                onChanged: (value) {
+                  if (value != null) {
+                    bloc.add(UpdateModel(value));
+                  }
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

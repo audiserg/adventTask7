@@ -10,6 +10,8 @@ class ApiService {
     List<Message> messages, {
     double? temperature,
     String? systemPrompt,
+    String? provider,
+    String? model,
   }) async {
     try {
       // Преобразуем сообщения в формат для API
@@ -32,6 +34,14 @@ class ApiService {
       
       if (systemPrompt != null && systemPrompt.isNotEmpty) {
         requestBody['systemPrompt'] = systemPrompt;
+      }
+      
+      if (provider != null && provider.isNotEmpty) {
+        requestBody['provider'] = provider;
+      }
+      
+      if (model != null && model.isNotEmpty) {
+        requestBody['model'] = model;
       }
 
       final response = await http
@@ -79,6 +89,45 @@ class ApiService {
         }
       } else {
         String errorMessage = 'Failed to get response: ${response.statusCode}';
+        try {
+          final errorData = jsonDecode(response.body) as Map<String, dynamic>;
+          errorMessage =
+              errorData['message'] as String? ??
+              errorData['error'] as String? ??
+              errorMessage;
+        } catch (_) {
+          errorMessage = '${response.statusCode}: ${response.body}';
+        }
+        throw Exception(errorMessage);
+      }
+    } catch (e) {
+      if (e is Exception) {
+        rethrow;
+      }
+      throw Exception('Network error: $e');
+    }
+  }
+
+  // Получить список доступных моделей
+  Future<Map<String, dynamic>> getAvailableModels() async {
+    try {
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl/api/models'),
+            headers: {'Content-Type': 'application/json'},
+          )
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw Exception('Request timeout');
+            },
+          );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data;
+      } else {
+        String errorMessage = 'Failed to get models: ${response.statusCode}';
         try {
           final errorData = jsonDecode(response.body) as Map<String, dynamic>;
           errorMessage =

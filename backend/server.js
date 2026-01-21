@@ -95,14 +95,337 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Chat endpoint - proxies to DeepSeek API
+// Endpoint для получения списка доступных моделей
+app.get('/api/models', async (req, res) => {
+  try {
+    console.log('📋 Request for available models');
+    
+    // Попытка получить список моделей из Hugging Face API
+    const hfApiKey = process.env.HUGGINGFACE_API_KEY;
+    let hfModels = [];
+    
+    if (hfApiKey) {
+      try {
+        // Попытка получить список через Hub API
+        const hubResponse = await fetch('https://huggingface.co/api/models?filter=text-generation-inference&sort=downloads&direction=-1&limit=50', {
+          headers: {
+            'Authorization': `Bearer ${hfApiKey}`,
+          },
+        });
+        
+        if (hubResponse.ok) {
+          const hubData = await hubResponse.json();
+          // Фильтруем только chat модели (исключаем gpt2, base модели и т.д.)
+          // Используем строгую фильтрацию для проверенных моделей
+          hfModels = hubData
+            .filter(model => {
+              if (!model.id || !model.id.includes('/')) return false;
+              const modelId = model.id.toLowerCase();
+              
+              // Исключаем модели, которые точно не chat
+              const excludePatterns = [
+                'gpt2',
+                'gpt-2',
+                'base',
+                'vision',
+                'embedding',
+                'tokenizer',
+                'openai-community/gpt2',
+                'qwen3-', // Qwen3 модели без -Instruct не поддерживают chat
+                'qwen2-0', // Qwen2.0 без -Instruct
+                '-0.6b',
+                '-1.5b',
+                '-3b-instruct', // Могут быть недоступны
+              ];
+              
+              // Строгие паттерны для включения - только проверенные форматы
+              const includePatterns = [
+                'qwen2.5-', // Qwen 2.5 с -Instruct
+                'llama-3.1-', // Llama 3.1
+                'llama-3.2-', // Llama 3.2
+                'llama-2-7b-chat', // Llama 2 chat
+                'mistral-7b-instruct',
+                'mixtral-8x7b-instruct',
+                'gemma-2-', // Gemma 2
+                'deepseek-', // DeepSeek модели
+                'glm-', // GLM модели
+              ];
+              
+              const hasExclude = excludePatterns.some(pattern => modelId.includes(pattern));
+              
+              // Для Qwen - только с -Instruct в конце
+              if (modelId.includes('qwen') && !modelId.includes('-instruct')) {
+                return false;
+              }
+              
+              // Для Llama - только с -Instruct или -chat
+              if (modelId.includes('llama') && !modelId.includes('-instruct') && !modelId.includes('-chat')) {
+                return false;
+              }
+              
+              // Для Mistral - только с -Instruct
+              if (modelId.includes('mistral') && !modelId.includes('-instruct')) {
+                return false;
+              }
+              
+              // Для Gemma - только с -it (instruction tuned)
+              if (modelId.includes('gemma') && !modelId.includes('-it')) {
+                return false;
+              }
+              
+              const hasInclude = includePatterns.some(pattern => modelId.includes(pattern));
+              
+              return !hasExclude && hasInclude;
+            })
+            .map(model => model.id)
+            .slice(0, 30); // Ограничиваем до 30 проверенных моделей
+        }
+      } catch (error) {
+        console.warn('⚠️ Could not fetch models from Hub API:', error.message);
+      }
+    }
+    
+    // Если не удалось получить динамически или список пустой, используем предустановленный список
+    // Используем только модели, которые точно поддерживают chat completion через router API
+    // Эти модели проверены и работают через router.huggingface.co/v1/chat/completions
+    if (hfModels.length === 0) {
+      console.log('📋 Using predefined model list (no models from Hub API)');
+      hfModels = [
+        // Qwen 2.5 модели (проверенные)
+        'Qwen/Qwen2.5-72B-Instruct',
+        'Qwen/Qwen2.5-32B-Instruct',
+        'Qwen/Qwen2.5-14B-Instruct',
+        'Qwen/Qwen2.5-7B-Instruct',
+        'Qwen/Qwen2.5-3B-Instruct',
+        // Llama модели (проверенные)
+        'meta-llama/Llama-3.1-8B-Instruct',
+        'meta-llama/Llama-3.1-70B-Instruct',
+        'meta-llama/Llama-3.2-3B-Instruct',
+        'meta-llama/Llama-2-7b-chat-hf',
+        // Gemma модели (проверенные)
+        'google/gemma-2-2b-it',
+        'google/gemma-2-9b-it',
+        // Mistral модели (проверенные)
+        'mistralai/Mistral-7B-Instruct-v0.2',
+        'mistralai/Mixtral-8x7B-Instruct-v0.1',
+        // DeepSeek модели (проверенные)
+        'deepseek-ai/DeepSeek-V3-0324',
+        'deepseek-ai/DeepSeek-V2-Lite',
+        'deepseek-ai/DeepSeek-R1',
+        // GLM модели (проверенные)
+        'zai-org/GLM-4.7-Flash:novita',
+      ];
+    } else {
+      // Дополнительно фильтруем динамически полученные модели
+      // Удаляем модели, которые точно не работают
+      hfModels = hfModels.filter(model => {
+        const modelId = model.toLowerCase();
+        // Исключаем проблемные модели
+        const problematicPatterns = [
+          'qwen3-',
+          'qwen2-0',
+          '-0.6b',
+          '-1.5b',
+          'qwen2.5-1.5b',
+        ];
+        return !problematicPatterns.some(pattern => modelId.includes(pattern));
+      });
+      
+      // Добавляем проверенные модели в начало списка
+      const verifiedModels = [
+        'Qwen/Qwen2.5-7B-Instruct',
+        'Qwen/Qwen2.5-14B-Instruct',
+        'meta-llama/Llama-3.1-8B-Instruct',
+        'google/gemma-2-2b-it',
+        'mistralai/Mistral-7B-Instruct-v0.2',
+        'zai-org/GLM-4.7-Flash:novita',
+      ];
+      
+      // Объединяем проверенные модели с динамическими, убирая дубликаты
+      const allModels = [...new Set([...verifiedModels, ...hfModels])];
+      hfModels = allModels.slice(0, 30);
+    }
+    
+    // Список моделей DeepSeek
+    const deepseekModels = [
+      'deepseek-ai/DeepSeek-V3-0324',
+      'deepseek-chat',
+      'deepseek-reasoner',
+      'deepseek-chat-reasoner',
+      'deepseek-ai/DeepSeek-V2-Lite',
+      'deepseek-ai/DeepSeek-R1',
+    ];
+    
+    const response = {
+      providers: {
+        deepseek: {
+          name: 'DeepSeek',
+          models: deepseekModels,
+          presets: PRESET_MODELS.deepseek,
+        },
+        huggingface: {
+          name: 'Hugging Face',
+          models: hfModels,
+          presets: PRESET_MODELS.huggingface,
+        },
+      },
+      defaultProvider: process.env.DEFAULT_PROVIDER || 'deepseek',
+    };
+    
+    console.log(`✅ Returning ${deepseekModels.length} DeepSeek models and ${hfModels.length} Hugging Face models`);
+    res.json(response);
+  } catch (error) {
+    console.error('❌ Error fetching models:', error.message);
+    res.status(500).json({ 
+      error: 'Failed to fetch models',
+      message: error.message 
+    });
+  }
+});
+
+// Предустановленные модели для быстрого доступа
+const PRESET_MODELS = {
+  deepseek: {
+    top: 'deepseek-ai/DeepSeek-V3-0324',
+    medium: 'deepseek-chat',
+    light: 'deepseek-chat',
+  },
+  huggingface: {
+    top: 'Qwen/Qwen2.5-72B-Instruct',
+    medium: 'Qwen/Qwen2.5-7B-Instruct',
+    light: 'google/gemma-2-2b-it',
+  },
+};
+
+// Функция для отправки запроса к DeepSeek API
+async function sendToDeepSeek(messagesWithSystem, temperature, model) {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    throw new Error('DEEPSEEK_API_KEY is not set in environment variables');
+  }
+
+  const deepseekUrl = 'https://api.deepseek.com/v1/chat/completions';
+  const requestBody = {
+    model: model || process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+    messages: messagesWithSystem,
+    stream: false,
+  };
+  
+  if (temperature !== undefined && temperature !== null) {
+    requestBody.temperature = temperature;
+  }
+  
+  console.log('🚀 Sending request to DeepSeek API:');
+  console.log('URL:', deepseekUrl);
+  console.log('Model:', requestBody.model);
+  console.log('Messages count:', messagesWithSystem.length);
+  
+  const response = await fetch(deepseekUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('❌ DeepSeek API error:', response.status, errorText);
+    throw new Error(`DeepSeek API error: ${response.status} - ${errorText}`);
+  }
+
+  return await response.json();
+}
+
+// Функция для отправки запроса к Hugging Face API
+async function sendToHuggingFace(messagesWithSystem, temperature, model) {
+  const apiKey = process.env.HUGGINGFACE_API_KEY;
+  if (!apiKey) {
+    throw new Error('HUGGINGFACE_API_KEY is not set in environment variables');
+  }
+
+  const hfUrl = 'https://router.huggingface.co/v1/chat/completions';
+  const requestBody = {
+    model: model || process.env.HUGGINGFACE_MODEL || 'Qwen/Qwen2.5-7B-Instruct',
+    messages: messagesWithSystem,
+    stream: false,
+  };
+  
+  if (temperature !== undefined && temperature !== null) {
+    requestBody.temperature = temperature;
+  }
+  
+  console.log('🚀 Sending request to Hugging Face API:');
+  console.log('URL:', hfUrl);
+  console.log('Model:', requestBody.model);
+  console.log('Messages count:', messagesWithSystem.length);
+  
+  const response = await fetch(hfUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('❌ Hugging Face API error:', response.status, errorText);
+    console.error('❌ Model used:', requestBody.model);
+    
+    // Более детальная обработка ошибок
+    let errorMessage = `Hugging Face API error: ${response.status}`;
+    try {
+      const errorData = JSON.parse(errorText);
+      // errorData.error может быть объектом с полем message
+      if (errorData.error) {
+        if (typeof errorData.error === 'string') {
+          errorMessage += ` - ${errorData.error}`;
+        } else if (errorData.error.message) {
+          errorMessage += ` - ${errorData.error.message}`;
+        } else if (errorData.error.type) {
+          errorMessage += ` - ${errorData.error.type}: ${errorData.error.message || errorData.error.code || ''}`;
+        } else {
+          errorMessage += ` - ${JSON.stringify(errorData.error)}`;
+        }
+      } else if (errorData.message) {
+        errorMessage += ` - ${errorData.message}`;
+      } else {
+        errorMessage += ` - ${errorText}`;
+      }
+    } catch (e) {
+      errorMessage += ` - ${errorText}`;
+    }
+    
+    // Если модель не поддерживается или не найдена, предлагаем альтернативу
+    if (response.status === 404 || 
+        response.status === 400 && (
+          errorText.includes('not found') || 
+          errorText.includes('Model') || 
+          errorText.includes('not a chat model') ||
+          errorText.includes('model_not_supported')
+        )) {
+      errorMessage += `. Модель "${requestBody.model}" не поддерживает chat completion или недоступна. Попробуйте другую модель из списка.`;
+    }
+    
+    throw new Error(errorMessage);
+  }
+
+  return await response.json();
+}
+
+// Chat endpoint - proxies to DeepSeek or Hugging Face API
 app.post('/api/chat', async (req, res) => {
   try {
     console.log('📨 Received chat request');
-    const { messages, temperature, systemPrompt } = req.body;
+    const { messages, temperature, systemPrompt, provider, model } = req.body;
     console.log(`📝 Messages count: ${messages?.length || 0}`);
     console.log(`🌡️ Temperature: ${temperature ?? 'default'}`);
     console.log(`📋 System prompt: ${systemPrompt ? 'custom' : 'default'}`);
+    console.log(`🔌 Provider: ${provider || 'default (deepseek)'}`);
+    console.log(`🤖 Model: ${model || 'default'}`);
     
     // Логируем содержимое сообщений
     if (messages && Array.isArray(messages)) {
@@ -118,15 +441,16 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
-    const apiKey = process.env.DEEPSEEK_API_KEY;
-    if (!apiKey) {
-      console.error('❌ DEEPSEEK_API_KEY is not set in environment variables');
-      return res.status(500).json({ 
-        error: 'Server configuration error' 
-      });
-    }
+    // Определяем провайдера
+    const selectedProvider = provider || process.env.DEFAULT_PROVIDER || 'deepseek';
     
-    console.log('🤖 Sending request to DeepSeek API...');
+    // Определяем модель
+    let selectedModel = model;
+    if (!selectedModel && selectedProvider === 'deepseek') {
+      selectedModel = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+    } else if (!selectedModel && selectedProvider === 'huggingface') {
+      selectedModel = process.env.HUGGINGFACE_MODEL || 'Qwen/Qwen2.5-7B-Instruct';
+    }
 
     // Используем переданный системный промпт, если он есть
     let messagesWithSystem = messages;
@@ -142,64 +466,41 @@ app.post('/api/chat', async (req, res) => {
       ];
     }
 
-    // Prepare request for DeepSeek API
-    // Используем deepseek-chat (дешевая chat модель)
-    // НЕ используем deepseek-reasoner или deepseek-chat-reasoner (reasoning модели дороже)
-    const deepseekUrl = 'https://api.deepseek.com/v1/chat/completions';
-    
-    const requestBody = {
-      model: process.env.DEEPSEEK_MODEL || 'deepseek-chat', // Chat модель (дешевле reasoning)
-      messages: messagesWithSystem,
-      stream: false,
-    };
-    
-    // Добавляем temperature, если указана
-    if (temperature !== undefined && temperature !== null) {
-      requestBody.temperature = temperature;
-    }
-    
-    // Логируем полный запрос к DeepSeek API
-    console.log('🚀 Full request to DeepSeek API:');
-    console.log('URL:', deepseekUrl);
-    console.log('Model:', requestBody.model);
-    console.log('Messages count:', messagesWithSystem.length);
-    console.log('📋 Full request body:');
-    console.log(JSON.stringify(requestBody, null, 2));
-    console.log('─'.repeat(80));
-    
-    const response = await fetch(deepseekUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ DeepSeek API error:', response.status, errorText);
-      return res.status(response.status).json({ 
-        error: 'Failed to get response from AI service',
-        details: errorText 
-      });
+    // Отправляем запрос в зависимости от провайдера
+    let data;
+    if (selectedProvider === 'huggingface') {
+      console.log('🤖 Sending request to Hugging Face API...');
+      data = await sendToHuggingFace(messagesWithSystem, temperature, selectedModel);
+    } else {
+      console.log('🤖 Sending request to DeepSeek API...');
+      data = await sendToDeepSeek(messagesWithSystem, temperature, selectedModel);
     }
 
-    const data = await response.json();
     const aiResponse = data.choices?.[0]?.message?.content || 'No response';
-    console.log(`✅ Received response from DeepSeek (${aiResponse.length} chars)`);
+    console.log(`✅ Received response from ${selectedProvider} (${aiResponse.length} chars)`);
     console.log(`📄 Full response:`);
     console.log(aiResponse);
     console.log('─'.repeat(80));
     
-    // Возвращаем ответ без информации о лимите (лимит отключен)
     res.json(data);
   } catch (error) {
     console.error('❌ Error processing chat request:', error.message);
     console.error('Stack:', error.stack);
-    res.status(500).json({ 
+    
+    // Определяем статус код ошибки
+    let statusCode = 500;
+    let errorMessage = error.message;
+    
+    if (error.message.includes('API error:')) {
+      statusCode = 502; // Bad Gateway
+    } else if (error.message.includes('is not set')) {
+      statusCode = 500;
+      errorMessage = 'Server configuration error: API key not set';
+    }
+    
+    res.status(statusCode).json({ 
       error: 'Internal server error',
-      message: error.message 
+      message: errorMessage 
     });
   }
 });

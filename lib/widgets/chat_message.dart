@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../models/message.dart';
+import '../bloc/chat_bloc.dart';
+import '../bloc/chat_event.dart';
 
 class ChatMessageWidget extends StatelessWidget {
   final Message message;
+  final int? messageIndex;
 
   const ChatMessageWidget({
     super.key,
     required this.message,
+    this.messageIndex,
   });
 
   @override
@@ -207,8 +213,38 @@ class ChatMessageWidget extends StatelessWidget {
                               ],
                             ],
                           ),
+                          // Кнопки для сообщений пользователя (копировать и удалить)
+                          if (message.isUser && messageIndex != null)
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: Icon(
+                                    Icons.copy,
+                                    size: 16,
+                                    color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  onPressed: () => _copyMessage(context),
+                                  tooltip: 'Копировать',
+                                ),
+                                const SizedBox(width: 4),
+                                IconButton(
+                                  icon: Icon(
+                                    Icons.delete_outline,
+                                    size: 16,
+                                    color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  onPressed: () => _deleteMessage(context),
+                                  tooltip: 'Удалить',
+                                ),
+                              ],
+                            )
                           // Иконка info для AI сообщений
-                          if (isAiMessage)
+                          else if (isAiMessage)
                             InkWell(
                               onTap: () => _showOriginalResponse(context),
                               child: Icon(
@@ -275,6 +311,49 @@ class ChatMessageWidget extends StatelessWidget {
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('Закрыть'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _copyMessage(BuildContext context) {
+    Clipboard.setData(ClipboardData(text: message.text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Сообщение скопировано в буфер обмена'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _deleteMessage(BuildContext context) {
+    if (messageIndex == null) return;
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Удалить сообщение?'),
+          content: const Text('Вы уверены, что хотите удалить это сообщение?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Отмена'),
+            ),
+            TextButton(
+              onPressed: () {
+                context.read<ChatBloc>().add(DeleteMessage(messageIndex!));
+                Navigator.of(dialogContext).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Сообщение удалено'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+              child: const Text('Удалить'),
             ),
           ],
         );

@@ -3,8 +3,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 class SettingsService {
   static const String _temperatureKey = 'temperature';
   static const String _systemPromptKey = 'system_prompt';
+  static const String _providerKey = 'provider';
+  static const String _modelKey = 'model';
   static const double _defaultTemperature = 0.7;
   static const String _defaultSystemPrompt = '';
+  static const String _defaultProvider = 'deepseek';
+  static const String _defaultModel = '';
 
   // Загрузить температуру
   static Future<double> loadTemperature() async {
@@ -66,22 +70,82 @@ class SettingsService {
     }
   }
 
+  // Загрузить провайдера
+  static Future<String> loadProvider() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final value = prefs.getString(_providerKey) ?? _defaultProvider;
+      print('SettingsService: Загружен провайдер: $value');
+      return value;
+    } catch (e) {
+      print('SettingsService: Ошибка при загрузке провайдера: $e');
+      return _defaultProvider;
+    }
+  }
+
+  // Сохранить провайдера
+  static Future<bool> saveProvider(String provider) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final result = await prefs.setString(_providerKey, provider);
+      print('SettingsService: Сохранен провайдер $provider, результат: $result');
+      return result;
+    } catch (e, stackTrace) {
+      print('SettingsService: Ошибка при сохранении провайдера: $e');
+      print('SettingsService: Stack trace: $stackTrace');
+      return false;
+    }
+  }
+
+  // Загрузить модель
+  static Future<String> loadModel() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final value = prefs.getString(_modelKey) ?? _defaultModel;
+      print('SettingsService: Загружена модель: $value');
+      return value;
+    } catch (e) {
+      print('SettingsService: Ошибка при загрузке модели: $e');
+      return _defaultModel;
+    }
+  }
+
+  // Сохранить модель
+  static Future<bool> saveModel(String model) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final result = await prefs.setString(_modelKey, model);
+      print('SettingsService: Сохранена модель $model, результат: $result');
+      return result;
+    } catch (e, stackTrace) {
+      print('SettingsService: Ошибка при сохранении модели: $e');
+      print('SettingsService: Stack trace: $stackTrace');
+      return false;
+    }
+  }
+
   // Загрузить все настройки
   static Future<Map<String, dynamic>> loadAllSettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final temperature = prefs.getDouble(_temperatureKey) ?? _defaultTemperature;
       final systemPrompt = prefs.getString(_systemPromptKey) ?? _defaultSystemPrompt;
-      print('SettingsService: Загружены все настройки - температура: $temperature, промпт длина: ${systemPrompt.length}');
+      final provider = prefs.getString(_providerKey) ?? _defaultProvider;
+      final model = prefs.getString(_modelKey) ?? _defaultModel;
+      print('SettingsService: Загружены все настройки - температура: $temperature, промпт длина: ${systemPrompt.length}, провайдер: $provider, модель: $model');
       return {
         'temperature': temperature,
         'systemPrompt': systemPrompt,
+        'provider': provider,
+        'model': model,
       };
     } catch (e) {
       print('SettingsService: Ошибка при загрузке всех настроек: $e');
       return {
         'temperature': _defaultTemperature,
         'systemPrompt': _defaultSystemPrompt,
+        'provider': _defaultProvider,
+        'model': _defaultModel,
       };
     }
   }

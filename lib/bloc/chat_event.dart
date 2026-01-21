@@ -41,3 +41,34 @@ class UpdateSystemPrompt extends ChatEvent {
 class LoadSettings extends ChatEvent {
   const LoadSettings();
 }
+
+class UpdateProvider extends ChatEvent {
+  final String provider;
+
+  const UpdateProvider(this.provider);
+
+  @override
+  List<Object?> get props => [provider];
+}
+
+class UpdateModel extends ChatEvent {
+  final String model;
+
+  const UpdateModel(this.model);
+
+  @override
+  List<Object?> get props => [model];
+}
+
+class LoadModels extends ChatEvent {
+  const LoadModels();
+}
+
+class DeleteMessage extends ChatEvent {
+  final int messageIndex;
+
+  const DeleteMessage(this.messageIndex);
+
+  @override
+  List<Object?> get props => [messageIndex];
+}
